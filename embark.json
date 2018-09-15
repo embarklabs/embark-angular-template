@@ -1,8 +1,8 @@
 {
   "contracts": ["contracts/**"],
   "app": {
-    "css/app.css": ["app/css/**"],
-    "js/app.js": ["app/js/index.ts"],
+    "css/app.css": ["app/style.css"],
+    "js/app.js": ["app/main.ts"],
     "images/": ["app/images/**"],
     "index.html": "app/index.html"
   },
