@@ -98,7 +98,12 @@ const base = {
                 corejs: 2,
                 useESModules: true
               }
-            ]
+            ],
+            [
+              '@babel/plugin-proposal-decorators', { 
+                'legacy': true 
+              }
+            ],
           ].map(resolve),
           presets: [
             [
@@ -171,6 +176,16 @@ production.name = 'production';
 
 // export a list of named configs
 // -----------------------------------------------------------------------------
+
+// typescript mods
+// -----------------------------------------------------------------------------
+base.resolve.extensions = [
+  // webpack defaults
+  // see: https://webpack.js.org/configuration/resolve/#resolve-extensions
+  '.wasm', '.mjs', '.js', '.json',
+  // typescript extensions
+  '.ts', '.tsx'
+];
 
 module.exports = [
   development,
