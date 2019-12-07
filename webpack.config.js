@@ -13,6 +13,8 @@ const cloneDeep = require('lodash.clonedeep');
 // const CompressionPlugin = require('compression-webpack-plugin');
 const glob = require('glob');
 const HardSourceWebpackPlugin = require('hard-source-webpack-plugin');
+const NormalModuleReplacementPlugin = require('webpack/lib/NormalModuleReplacementPlugin');
+const TerserPlugin = require('terser-webpack-plugin');
 const path = require('path');
 
 const dappPath = process.env.DAPP_PATH;
@@ -42,7 +44,7 @@ const entry = Object.keys(embarkAssets)
     // webpack context; embark.json "app" keys correspond to lists of .js
     // source paths relative to the top-level dapp dir and may be missing the
     // leading './'
-    obj[key] = embarkAssets[key]
+    obj[key.replace(/\.js$/, '')] = embarkAssets[key]
       .map(file => {
         let file_path = file.path;
         if (!file.path.match(/^\.\//)) {
@@ -52,6 +54,9 @@ const entry = Object.keys(embarkAssets)
       });
     return obj;
   }, {});
+
+const globalStylesBundleNames = Object.keys(embarkAssets)
+  .filter(key => key.match(/\.css$/));
 
 function resolve(pkgName) {
   if (Array.isArray(pkgName)) {
@@ -71,19 +76,15 @@ const base = {
   module: {
     rules: [
       {
-        test: /\.css$/,
-        use: [{loader: 'style-loader'}, {loader: 'css-loader'}]
-      },
-      {
-        test: /\.scss$/,
-        use: [{loader: 'style-loader'}, {loader: 'css-loader'}]
+        test: /\.(html|css)$/,
+        loader: 'raw-loader'
       },
       {
         test: /\.(png|woff|woff2|eot|ttf|svg)$/,
         loader: 'url-loader?limit=100000'
       },
       {
-        test: /\.(js|jsx|tsx|ts)$/,
+        test: /\.jsx?$/,
         loader: 'babel-loader',
         exclude: /(node_modules|bower_components|\.embark[\\/]versions)/,
         options: {
@@ -108,20 +109,22 @@ const base = {
                   browsers: ['last 1 version', 'not dead', '> 0.2%']
                 }
               }
-            ],
-            '@babel/preset-react',
-            '@babel/preset-typescript'
+            ]
           ].map(resolve)
         }
+      },
+      {
+        test: /\.tsx?$/,
+        use: [
+          { loader: 'ts-loader' },
+          { loader: 'angular2-template-loader' },
+        ],
+        exclude: /(node_modules|bower_components|\.embark[\\/]versions|(\.(spec|e2e)\.ts$))/
       }
     ]
   },
   output: {
-    filename: (chunkData) => chunkData.chunk.name,
-    // globalObject workaround for node-compatible UMD builds with webpack 4
-    // see: https://github.com/webpack/webpack/issues/6522#issuecomment-371120689
-    globalObject: 'typeof self !== \'undefined\' ? self : this',
-    libraryTarget: 'umd',
+    filename: '[name].js',
     path: buildDir
   },
   plugins: [new HardSourceWebpackPlugin()],
@@ -144,8 +147,51 @@ const base = {
       'node_modules',
       embarkNodeModules
     ]
+  },
+  optimization: {
+    runtimeChunk: 'single',
+    splitChunks: {
+      maxAsyncRequests: Infinity,
+      cacheGroups: {
+        default: {
+          chunks: 'async',
+          minChunks: 2,
+          priority: 10
+        },
+        common: {
+          name: 'common',
+          chunks: 'async',
+          minChunks: 2,
+          enforce: true,
+          priority: 5
+        },
+        vendors: false,
+        vendor: {
+          name: 'vendor',
+          chunks: 'initial',
+          enforce: true,
+          test: (module, chunks) => {
+            const moduleName = module.nameForCondition ? module.nameForCondition() : '';
+
+            return /[\\/]node_modules[\\/]/.test(moduleName)
+              && !chunks.some(({ name }) => name === 'polyfills'
+                || globalStylesBundleNames.includes(name));
+          }
+        }
+      }
+    }
   }
 };
+
+// typescript mods
+// -----------------------------------------------------------------------------
+base.resolve.extensions = [
+  // webpack defaults
+  // see: https://webpack.js.org/configuration/resolve/#resolve-extensions
+  '.wasm', '.mjs', '.js', '.json',
+  // typescript extensions
+  '.ts', '.tsx'
+];
 
 // development config
 // -----------------------------------------------------------------------------
@@ -157,7 +203,7 @@ development.mode = 'development';
 // alternatively:
 // development.mode = 'none';
 development.name = 'development';
-const devBabelLoader = development.module.rules[3];
+const devBabelLoader = development.module.rules[2];
 devBabelLoader.options.compact = false;
 
 // production config
@@ -168,6 +214,15 @@ production.mode = 'production';
 production.name = 'production';
 // compression of webpack's JS output not enabled by default
 // production.plugins.push(new CompressionPlugin());
+// minify JS output with terser
+production.optimization.minimizer = [new TerserPlugin()];
+// replace environment import with environment.prod
+production.plugins.push(new NormalModuleReplacementPlugin(
+  /\/environments\/environment$/,
+  resource => {
+    resource.request = resource.request.replace(/\/environments\/environment/, '/environments/environment.prod');
+  }
+));
 
 // export a list of named configs
 // -----------------------------------------------------------------------------
